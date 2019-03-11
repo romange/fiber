@@ -116,7 +116,6 @@ context::~context() {
     // protect for concurrent access
     std::unique_lock< detail::spinlock > lk{ splk_ };
     BOOST_ASSERT( ! ready_is_linked() );
-    BOOST_ASSERT( ! remote_ready_is_linked() );
     BOOST_ASSERT( ! sleep_is_linked() );
     BOOST_ASSERT( ! wait_is_linked() );
     if ( is_context( type::dispatcher_context) ) {
@@ -337,11 +336,6 @@ context::worker_is_linked() const noexcept {
 bool
 context::ready_is_linked() const noexcept {
     return ready_hook_.is_linked();
-}
-
-bool
-context::remote_ready_is_linked() const noexcept {
-    return remote_ready_hook_.is_linked();
 }
 
 bool

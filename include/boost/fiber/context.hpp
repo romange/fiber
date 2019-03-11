@@ -36,6 +36,7 @@
 #include <boost/fiber/detail/data.hpp>
 #include <boost/fiber/detail/decay_copy.hpp>
 #include <boost/fiber/detail/fss.hpp>
+#include <boost/fiber/detail/mpsc_queue.hpp>
 #include <boost/fiber/detail/spinlock.hpp>
 #include <boost/fiber/exceptions.hpp>
 #include <boost/fiber/fixedsize_stack.hpp>
@@ -119,14 +120,6 @@ typedef intrusive::slist_member_hook<
     >
 >                                       terminated_hook;
 
-struct remote_ready_tag;
-typedef intrusive::slist_member_hook<
-    intrusive::tag< remote_ready_tag >,
-    intrusive::link_mode<
-        intrusive::safe_link
-    >
->                                       remote_ready_hook;
-
 }
 
 class BOOST_FIBERS_DECL context {
@@ -169,9 +162,7 @@ private:
 #else
     std::size_t                                         use_count_;
 #endif
-#if ! defined(BOOST_FIBERS_NO_ATOMICS)
-    detail::remote_ready_hook                           remote_ready_hook_{};
-#endif
+
     detail::spinlock                                    splk_{};
     bool                                                terminated_{ false };
     wait_queue_t                                        wait_queue_{};
@@ -201,6 +192,9 @@ private:
     }
 
 public:
+    // used by mpsc (remote ready) queue.
+    std::atomic<context*> mpsc_next_ { nullptr };
+
     class id {
     private:
         context  *   impl_{ nullptr };
@@ -328,8 +322,6 @@ public:
 
     bool ready_is_linked() const noexcept;
 
-    bool remote_ready_is_linked() const noexcept;
-
     bool sleep_is_linked() const noexcept;
 
     bool terminated_is_linked() const noexcept;
@@ -347,13 +339,6 @@ public:
     void ready_link( List & lst) noexcept {
         static_assert( std::is_same< typename List::value_traits::hook_type, detail::ready_hook >::value, "not a ready-queue");
         BOOST_ASSERT( ! ready_is_linked() );
-        lst.push_back( * this);
-    }
-
-    template< typename List >
-    void remote_ready_link( List & lst) noexcept {
-        static_assert( std::is_same< typename List::value_traits::hook_type, detail::remote_ready_hook >::value, "not a remote-ready-queue");
-        BOOST_ASSERT( ! remote_ready_is_linked() );
         lst.push_back( * this);
     }
 
@@ -472,7 +457,7 @@ static intrusive_ptr< context > make_worker_context( launch policy,
             reinterpret_cast< uintptr_t >( sctx.sp) - static_cast< uintptr_t >( sctx.size) );
     const std::size_t size = reinterpret_cast< uintptr_t >( storage) - reinterpret_cast< uintptr_t >( stack_bottom);
     // placement new of context on top of fiber's stack
-    return intrusive_ptr< context >{ 
+    return intrusive_ptr< context >{
             new ( storage) context_t{
                 policy,
                 boost::context::preallocated{ storage, size, sctx },

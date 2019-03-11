@@ -72,21 +72,9 @@ private:
                 intrusive::linear< true >,
                 intrusive::cache_last< true >
             >                                               terminated_queue_type;
-    typedef intrusive::slist<
-                context,
-                intrusive::member_hook<
-                    context, detail::remote_ready_hook, & context::remote_ready_hook_ >,
-                intrusive::linear< true >,
-                intrusive::cache_last< true >
-            >                                               remote_ready_queue_type;
 
-#if ! defined(BOOST_FIBERS_NO_ATOMICS)
-    // remote ready-queue contains context' signaled by schedulers
-    // running in other threads
-    detail::spinlock                                            remote_ready_splk_{};
-    remote_ready_queue_type                                     remote_ready_queue_{};
-#endif
-    algo::algorithm::ptr_t             algo_;
+    detail::mpsc<context>                                       remote_ready_mpsc_queue_;
+    algo::algorithm::ptr_t                                      algo_;
     // sleep-queue contains context' which have been called
     // scheduler::wait_until()
     sleep_queue_type                                            sleep_queue_{};
